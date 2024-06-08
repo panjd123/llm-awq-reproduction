@@ -1,3 +1,6 @@
 [submodule "llm-awq"]
 	path = llm-awq
 	url = https://github.com/mit-han-lab/llm-awq.git
+[submodule "VILA"]
+	path = VILA
+	url = https://github.com/Efficient-Large-Model/VILA.git
