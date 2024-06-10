@@ -6,6 +6,19 @@ This repository contains the reproduction of the paper "AWQ: Activation-aware We
 
 - [Installation](#installation)
 
+## Introduction
+
+Based on [llm-awq](https://github.com/mit-han-lab/llm-awq), commit `ca11f3`.
+
+But modified the following to make it work:
+
+- Add `config.use_cache = False` to avoid oom.
+- Manually implement ppl evaluation for wikitext.
+
+Why commit `ca11f3`:
+
+- The nearest major commit before `5f06db`, which introduces a much more complex CUDA kernel.
+
 ## Installation
 
 To set up the environment, please use the following steps:
