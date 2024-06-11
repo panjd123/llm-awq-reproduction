@@ -1,2 +1,8 @@
 paper
 .vscode
+tmp/
+__pycache__
+*.egg-info/
+build/
+test/
+examples/

@@ -1,3 +1,6 @@
 [submodule "llm-awq"]
 	path = llm-awq
 	url = https://github.com/mit-han-lab/llm-awq.git
+[submodule "AutoAWQ"]
+	path = AutoAWQ
+	url = https://github.com/casper-hansen/AutoAWQ.git
