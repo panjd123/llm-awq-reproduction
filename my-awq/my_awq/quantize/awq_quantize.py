@@ -4,7 +4,7 @@ from transformers.models.llama.modeling_llama import LlamaRMSNorm
 import tqdm
 
 from ..utils.utils import get_op_by_name, clear_memory, set_op_by_name
-from .awq_search import get_layers, get_named_linears
+from .awq_search import get_layers, get_named_linears, get_device
 from .quantizer import pseudo_quantize_tensor
 
 
@@ -101,20 +101,18 @@ def real_quantize_model_weight(model, q_config, init_only=False):
                 q_linear = AWQLinear.from_linear(
                     module, q_bit, q_config["q_group_size"], True
                 )
-                q_linear.to(next(layer.parameters()).device)
+                q_linear.to(get_device(layer))
                 set_op_by_name(layer, name, q_linear)
             else:
                 module.cuda()
                 module.weight.data, scales, zeros = pseudo_quantize_tensor(
                     module.weight.data, get_scale_zp=True, **q_config
                 )
-                # scales = scales.t().contiguous()
-                # zeros = zeros.t().contiguous()
                 q_linear = AWQLinear.from_linear(
                     module, q_bit, q_config["q_group_size"], False, scales, zeros
                 )
                 module.cpu()
-                q_linear.to(next(layer.parameters()).device)
+                q_linear.to(get_device(layer))
                 set_op_by_name(layer, name, q_linear)
                 clear_memory()
 

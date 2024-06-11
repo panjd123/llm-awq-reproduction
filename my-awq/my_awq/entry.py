@@ -11,6 +11,7 @@ from .quantize.awq_quantize import (
     real_quantize_model_weight,
 )
 from .quantize.clipper import apply_clip
+from accelerate import init_empty_weights, load_checkpoint_in_model
 
 logger = logging.getLogger("myawq")
 logger.setLevel(logging.INFO)
@@ -78,49 +79,61 @@ def main():
     enc = AutoTokenizer.from_pretrained(
         args.model_path, use_fast=False, trust_remote_code=True
     )
-    model = AutoModelForCausalLM.from_pretrained(
-        args.model_path,
-        config=config,
-        trust_remote_code=True,
-        **{"torch_dtype": torch.float16, "low_cpu_mem_usage": True},
-    )
-    model.eval()
-    if args.run_awq:
-        awq_results = run_awq_search(
-            model,
-            enc,
-            q_config=q_config,
-            n_samples=16,
-            seqlen=512,
-            # offline
-            calib_dataset_path=args.calib_dataset_path,
+
+    if args.load_quant:
+        with init_empty_weights():
+            model = AutoModelForCausalLM.from_config(
+                config=config, torch_dtype=torch.float16, trust_remote_code=True
+            )
+        real_quantize_model_weight(model, q_config=q_config, init_only=True)
+        model.tie_weights()
+        load_checkpoint_in_model(
+            model, args.load_quant, device_map="auto", offload_state_dict=True
         )
-        if args.dump_awq:
-            torch.save(awq_results, args.dump_awq)
-            logger.info(f"AWQ results saved at {args.dump_awq}")
-        # exit(0) actually
+        model.eval()
     else:
-        if args.load_awq:  # dump_real or dump_fake
-            awq_results = torch.load(args.load_awq, map_location="cpu")
-            apply_awq_scale(model, awq_results["scale"])
-            apply_clip(model, awq_results["clip"])
+        model = AutoModelForCausalLM.from_pretrained(
+            args.model_path,
+            config=config,
+            trust_remote_code=True,
+            **{"torch_dtype": torch.float16, "low_cpu_mem_usage": True},
+        )
+        model.eval()
 
-            if args.q_backend == "fake":
-                pseudo_quantize_model_weight(model, q_config)
-            else:
-                real_quantize_model_weight(model, q_config)
+        if args.run_awq:
+            awq_results = run_awq_search(
+                model,
+                enc,
+                q_config=q_config,
+                n_samples=16,
+                seqlen=512,
+                # offline
+                calib_dataset_path=args.calib_dataset_path,
+            )
+            if args.dump_awq:
+                torch.save(awq_results, args.dump_awq)
+                logger.info(f"AWQ results saved at {args.dump_awq}")
+            # exit(0) actually
+        else:
+            if args.load_awq:  # dump_real or dump_fake
+                awq_results = torch.load(args.load_awq, map_location="cpu")
+                apply_awq_scale(model, awq_results["scale"])
+                apply_clip(model, awq_results["clip"])
 
-            if args.dump_quant:
-                assert args.q_backend != "fake", "Cannot dump fake quant model"
-                model.save_pretrained(args.dump_quant)
-                logger.info(f"Quantized model saved at {args.dump_quant}")
-        elif args.load_quant:  # test real quant
-            pass
-        else:  # test original model
-            pass
+                if args.q_backend == "fake":
+                    pseudo_quantize_model_weight(model, q_config)
+                else:
+                    real_quantize_model_weight(model, q_config)
 
-        if args.run_eval:
-            eval_wikitext_ppl(model, enc, args.wikitext_path)
+                if args.dump_quant:
+                    assert args.q_backend != "fake", "Cannot dump fake quant model"
+                    model.save_pretrained(args.dump_quant)
+                    logger.info(f"Quantized model saved at {args.dump_quant}")
+            elif not args.load_quant:  # test original model
+                pass
+
+    if args.run_eval:
+        eval_wikitext_ppl(model, enc, args.wikitext_path)
 
 
 if __name__ == "__main__":
