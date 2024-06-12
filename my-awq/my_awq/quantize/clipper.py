@@ -45,7 +45,6 @@ def _auto_clip(w, input_feat, q_config, n_grid=20, max_shrink=0.5, n_sample_toke
             err = (cur_out - org_out).pow(2).mean(dim=1).view(min_errs.shape)
             del cur_w
             del cur_out
-            clear_memory()
             cur_best_idx = err < min_errs
             min_errs[cur_best_idx] = err[cur_best_idx]
             best_max_val[cur_best_idx] = max_val[cur_best_idx]

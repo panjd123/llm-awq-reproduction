@@ -137,7 +137,7 @@ def main():
                 model,
                 enc,
                 q_config=q_config,
-                n_samples=16,
+                n_samples=128,
                 seqlen=512,
                 # offline
                 calib_dataset_path=args.calib_dataset_path,
