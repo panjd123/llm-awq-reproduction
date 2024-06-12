@@ -10,6 +10,18 @@ python -m my_awq.entry --model_path /data/models/llama-2-7b \
     --w_bit 4 --q_group_size 128 \
     --load_awq /data/my_awq_cache/awq_results.pt --q_backend fake \
     --run_eval --wikitext_path /data/datasets/wikitext
+
+==============================================================================================================
+
+python -m my_awq.entry --model_path /data/models/llama-2-7b \
+    --w_bit 4 --q_group_size 128 \
+    --run_awq --calib_dataset_path mit-han-lab/pile-val-backup --dump_awq /data/my_awq_cache/awq_results.pt
+    
+
+python -m my_awq.entry --model_path /data/models/llama-2-7b \
+    --w_bit 4 --q_group_size 128 \
+    --load_awq /data/my_awq_cache/awq_results.pt --q_backend fake \
+    --run_eval --wikitext_path wikitext
 """
 
 from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig
