@@ -10,10 +10,23 @@ def align_up(a, b):
     return ((a + b - 1) // b) * b
 
 
-def unpack_quantized_tensor(qtensor, q_bit=4, pack_num=8):
+def unpack_quantized_tensor(qtensor, q_bit=4, pack_num=8, shape1=None):
     assert qtensor.dtype == torch.int32
     assert q_bit in [4], "Only 4-bit are supported for now."
     assert pack_num in [8], "Only 8 pack num is supported for now."
+    shape1 = shape1 or qtensor.shape[1] * pack_num
+    otensor = torch.zeros(
+        qtensor.shape[0], shape1, dtype=torch.float16, device=qtensor.device
+    )
+    for i in range(qtensor.shape[1]):
+        qvalue = qtensor[:, i].clone()
+        mask = (1 << q_bit) - 1
+        for j in range(pack_num):
+            if i * pack_num + j >= shape1:
+                break
+            otensor[:, i * pack_num + j] = (qvalue & mask).to(torch.float16)
+            qvalue >>= q_bit
+    return otensor
 
 
 class AWQLinear(nn.Module):
@@ -27,7 +40,8 @@ class AWQLinear(nn.Module):
         self.out_features = out_features
         self.q_bit = q_bit
         self.group_size = group_size
-        self.split_k_iters = 8
+        self.n_group = in_features // group_size
+        # self.split_k_iters = 8
         pack_num = 32 // self.q_bit  # 8
         self.pack_num = pack_num
 
@@ -59,7 +73,8 @@ class AWQLinear(nn.Module):
             torch.zeros(
                 (
                     out_features,
-                    align_up(n_group, pack_num),
+                    n_group,
+                    pack_num,
                 ),
                 dtype=torch.float16,
                 device=device,
@@ -95,11 +110,12 @@ class AWQLinear(nn.Module):
         ic = awq_linear.in_features
         # oc = awq_linear.out_features
         pack_num = awq_linear.pack_num
-        n_group = ic // group_size
+        n_group = awq_linear.n_group
 
         # scales
-        padding_scales = torch.zeros_like(awq_linear.scales, device=device)
-        padding_scales[:, : scales.shape[1]] = scales
+        # padding_scales = torch.zeros_like(awq_linear.scales, device=device)
+        # padding_scales[:, : scales.shape[1]] = scales
+        padding_scales = scales.clone().to(torch.float16)
         awq_linear.scales = padding_scales
 
         # bias
@@ -110,10 +126,8 @@ class AWQLinear(nn.Module):
         weight = linear.weight.data  # (oc, ic)
         int_weight = []
 
-        print(weight.device, padding_scales.device, zeros.device)
-
         for i in range(ic):  # shape[1]
-            col = (
+            col = torch.round(
                 weight[:, i] / padding_scales[:, i // group_size]
                 + zeros[:, i // group_size]
             )
@@ -131,8 +145,6 @@ class AWQLinear(nn.Module):
         # zeros
         zeros = zeros.to(torch.int32)
         qzeros = torch.zeros_like(awq_linear.qzeros, device=device)
-        print(qzeros.shape)
-        print(n_group, pack_num)
 
         for i in range(ceil_div(n_group, pack_num)):
             for j in range(pack_num):
@@ -148,9 +160,18 @@ class AWQLinear(nn.Module):
     def forward(self, x):
         out_shape = x.shape[:-1] + (self.out_features,)
         inputs = x.reshape(-1, x.shape[-1])
-        out = torch.zeros(
-            (inputs.shape[0], self.out_features), device=x.device, dtype=torch.float16
-        )  # TODO
+
+        q = unpack_quantized_tensor(self.qweight, self.q_bit, self.pack_num)  # (oc, ic)
+        z = unpack_quantized_tensor(
+            self.qzeros, self.q_bit, self.pack_num, shape1=self.n_group
+        )  # (oc, n_group)
+        s = self.scales  # (oc, n_group)
+        group_size = self.group_size
+        w = ((q.view(-1, group_size) - z.view(-1, 1)) * s.view(-1, 1)).reshape(
+            -1, x.shape[-1]
+        )
+        out = torch.mm(inputs, w.t())
+
         if self.bias is not None:
             out += self.bias
         return out.reshape(out_shape)
