@@ -16,7 +16,6 @@ python -m my_awq.entry --model_path /data/models/llama-2-7b \
 python -m my_awq.entry --model_path /data/models/llama-2-7b \
     --w_bit 4 --q_group_size 128 \
     --run_awq --calib_dataset_path mit-han-lab/pile-val-backup --dump_awq /data/my_awq_cache/awq_results.pt
-    
 
 python -m my_awq.entry --model_path /data/models/llama-2-7b \
     --w_bit 4 --q_group_size 128 \
@@ -137,7 +136,7 @@ def main():
                 model,
                 enc,
                 q_config=q_config,
-                n_samples=128,
+                n_samples=32,  # TODO: 128
                 seqlen=512,
                 # offline
                 calib_dataset_path=args.calib_dataset_path,
@@ -145,12 +144,12 @@ def main():
             if args.dump_awq:
                 torch.save(awq_results, args.dump_awq)
                 logger.info(f"AWQ results saved at {args.dump_awq}")
-            # exit(0) actually
+            exit(0)
         else:
             if args.load_awq:  # dump_real or dump_fake
                 awq_results = torch.load(args.load_awq, map_location="cpu")
-                apply_awq_scale(model, awq_results["scale"], tqdmoutput=True)
-                apply_clip(model, awq_results["clip"])
+                apply_awq_scale(model, awq_results["scale"], disabletqdm=False)
+                apply_clip(model, awq_results["clip"], disabletqdm=False)
 
                 if args.q_backend == "fake":
                     pseudo_quantize_model_weight(model, q_config)

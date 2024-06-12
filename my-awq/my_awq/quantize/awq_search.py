@@ -213,7 +213,6 @@ def run_awq_search(
     layers = get_layers(model)
 
     inps, layer_kwargs = get_layer0_input(model, embed, layers, samples)
-    torch.save(inps.detach().cpu(), "inps.pt")
 
     del samples
     clear_memory()

@@ -79,9 +79,11 @@ def auto_clip_layer(module, input_feat, q_config):
 
 
 @torch.no_grad()
-def apply_clip(module, clip_list):
+def apply_clip(module, clip_list, disabletqdm=True):
 
-    for name, max_val in tqdm.tqdm(clip_list, desc="applying clip..."):
+    for name, max_val in tqdm.tqdm(
+        clip_list, desc="applying clip...", disable=disabletqdm
+    ):
         layer = get_op_by_name(module, name)
         layer.cuda()
         max_val = max_val.to(layer.weight.device)

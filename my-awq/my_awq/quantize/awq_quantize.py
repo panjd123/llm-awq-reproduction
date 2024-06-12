@@ -41,9 +41,9 @@ def scale_fc_fc(fc1, fc2, scales):
     fc2.weight.mul_(scales.view(1, -1))
 
 
-def apply_awq_scale(module, scales_list, input_feat_dict=None, tqdmoutput=False):
+def apply_awq_scale(module, scales_list, input_feat_dict=None, disabletqdm=True):
     for prev_layer_name, layer_names, scales in tqdm.tqdm(
-        scales_list, desc="apply awq scale", disable=not tqdmoutput
+        scales_list, desc="apply awq scale", disable=disabletqdm
     ):
         prev_op = get_op_by_name(module, prev_layer_name)
         layers = [get_op_by_name(module, name) for name in layer_names]
