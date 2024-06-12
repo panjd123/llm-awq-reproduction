@@ -15,8 +15,21 @@ def _is_cuda() -> bool:
 ext_modules = []
 
 # Compiler flags.
-CXX_FLAGS = ["-g", "-O3", "-std=c++17"]
-NVCC_FLAGS = ["-O3", "-std=c++17"]
+CXX_FLAGS = ["-g", "-O3", "-fopenmp", "-lgomp", "-std=c++17", "-DENABLE_BF16"]
+NVCC_FLAGS = [
+    "-O3",
+    "-std=c++17",
+    "-U__CUDA_NO_HALF_OPERATORS__",
+    "-U__CUDA_NO_HALF_CONVERSIONS__",
+    "-U__CUDA_NO_BFLOAT16_OPERATORS__",
+    "-U__CUDA_NO_BFLOAT16_CONVERSIONS__",
+    "-U__CUDA_NO_BFLOAT162_OPERATORS__",
+    "-U__CUDA_NO_BFLOAT162_CONVERSIONS__",
+    "--expt-relaxed-constexpr",
+    "--expt-extended-lambda",
+    "--use_fast_math",
+    "--threads=8",
+]
 
 
 def glob(pattern: str):

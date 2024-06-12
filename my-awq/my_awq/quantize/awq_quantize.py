@@ -43,7 +43,7 @@ def scale_fc_fc(fc1, fc2, scales):
 
 def apply_awq_scale(module, scales_list, input_feat_dict=None, disabletqdm=True):
     for prev_layer_name, layer_names, scales in tqdm.tqdm(
-        scales_list, desc="apply awq scale", disable=disabletqdm
+        scales_list, desc="applying awq scale", disable=disabletqdm
     ):
         prev_op = get_op_by_name(module, prev_layer_name)
         layers = [get_op_by_name(module, name) for name in layer_names]
@@ -80,7 +80,7 @@ def pseudo_quantize_model_weight(
 ):
 
     layers = get_layers(model)
-    for i in tqdm.tqdm(range(len(layers)), desc="pseudo weight quantization..."):
+    for i in tqdm.tqdm(range(len(layers)), desc="pseudo weight quantization"):
         named_linears = get_named_linears(layers[i])
         for n, m in named_linears.items():
             m.cuda()
@@ -98,7 +98,7 @@ def real_quantize_model_weight(model, q_config, init_only=False):
     layers = get_layers(model)
     for i in tqdm(
         range(len(layers)),
-        desc="real weight quantization..." + ("(init only)" if init_only else ""),
+        desc="real weight quantization" + ("(init only)" if init_only else ""),
     ):
         layer = layers[i]
         named_linears = get_named_linears(layer)

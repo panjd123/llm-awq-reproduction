@@ -3,7 +3,7 @@ import torch
 
 @torch.no_grad()
 def pseudo_quantize_tensor(
-    w, q_bit=4, zero_point=True, q_group_size=-1, inplace=False, get_scale_zp=False
+    w, q_bit=4, zero_point=True, q_group_size=128, inplace=False, get_scale_zp=False
 ):
     """
     scales = (max_val - min_val) / max_int
@@ -19,9 +19,9 @@ def pseudo_quantize_tensor(
     scales, zeros: [oc, ic / group_size]
     """
     org_w_shape = w.shape
-    if q_group_size > 0:
-        assert org_w_shape[-1] % q_group_size == 0
-        w = w.reshape(-1, q_group_size)
+
+    assert org_w_shape[-1] % q_group_size == 0
+    w = w.reshape(-1, q_group_size)
 
     if zero_point:
         max_val = w.amax(dim=1, keepdim=True)

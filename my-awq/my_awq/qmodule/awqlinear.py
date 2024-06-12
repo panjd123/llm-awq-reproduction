@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import my_awq_kernels
 
 
 def ceil_div(a, b):
@@ -8,6 +9,11 @@ def ceil_div(a, b):
 
 def align_up(a, b):
     return ((a + b - 1) // b) * b
+
+
+BYTE32 = 128
+HALF_PRE_BYTE32 = 8
+INT_PRE_BYTE32 = 4
 
 
 def unpack_quantized_tensor(qtensor, q_bit=4, pack_num=8, shape1=None):
@@ -71,11 +77,7 @@ class AWQLinear(nn.Module):
         self.register_buffer(
             "scales",
             torch.zeros(
-                (
-                    out_features,
-                    n_group,
-                    pack_num,
-                ),
+                (out_features, align_up(n_group, pack_num)),
                 dtype=torch.float16,
                 device=device,
             ),
@@ -113,9 +115,8 @@ class AWQLinear(nn.Module):
         n_group = awq_linear.n_group
 
         # scales
-        # padding_scales = torch.zeros_like(awq_linear.scales, device=device)
-        # padding_scales[:, : scales.shape[1]] = scales
-        padding_scales = scales.clone().to(torch.float16)
+        padding_scales = torch.zeros_like(awq_linear.scales, device=device)
+        padding_scales[:, : scales.shape[1]] = scales
         awq_linear.scales = padding_scales
 
         # bias
@@ -161,16 +162,23 @@ class AWQLinear(nn.Module):
         out_shape = x.shape[:-1] + (self.out_features,)
         inputs = x.reshape(-1, x.shape[-1])
 
-        q = unpack_quantized_tensor(self.qweight, self.q_bit, self.pack_num)  # (oc, ic)
-        z = unpack_quantized_tensor(
-            self.qzeros, self.q_bit, self.pack_num, shape1=self.n_group
-        )  # (oc, n_group)
-        s = self.scales  # (oc, n_group)
-        group_size = self.group_size
-        w = ((q.view(-1, group_size) - z.view(-1, 1)) * s.view(-1, 1)).reshape(
-            -1, x.shape[-1]
-        )
-        out = torch.mm(inputs, w.t())
+        if False:
+            q = unpack_quantized_tensor(
+                self.qweight, self.q_bit, self.pack_num
+            )  # (oc, ic)
+            z = unpack_quantized_tensor(
+                self.qzeros, self.q_bit, self.pack_num, shape1=self.n_group
+            )  # (oc, n_group)
+            s = self.scales[:, :n_group]  # (oc, n_group)
+            group_size = self.group_size
+            w = ((q.view(-1, group_size) - z.view(-1, 1)) * s.view(-1, 1)).reshape(
+                -1, x.shape[-1]
+            )
+            out = torch.mm(inputs, w.t())
+        else:
+            out = my_awq_kernels.mygemv_cuda(
+                inputs, self.qweight, self.scales, self.qzeros, self.group_size
+            )
 
         if self.bias is not None:
             out += self.bias

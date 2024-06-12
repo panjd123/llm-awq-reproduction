@@ -223,7 +223,7 @@ def run_awq_search(
     }
 
     # solve layer by layer
-    for i in tqdm.tqdm(range(len(layers)), desc="Running AWQ..."):
+    for i in tqdm.tqdm(range(len(layers)), desc="Running AWQ search"):
         layer = layers[i]
         layer.cuda()
 
