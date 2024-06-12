@@ -149,7 +149,7 @@ def main():
         else:
             if args.load_awq:  # dump_real or dump_fake
                 awq_results = torch.load(args.load_awq, map_location="cpu")
-                apply_awq_scale(model, awq_results["scale"])
+                apply_awq_scale(model, awq_results["scale"], tqdmoutput=True)
                 apply_clip(model, awq_results["clip"])
 
                 if args.q_backend == "fake":

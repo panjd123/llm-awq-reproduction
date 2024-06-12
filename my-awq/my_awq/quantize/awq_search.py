@@ -262,7 +262,7 @@ def run_awq_search(
             q_config=q_config,
             input_feat=input_feat,
         )
-        apply_awq_scale(layer, scales_list, input_feat_dict=input_feat, tqdmoutput=True)
+        apply_awq_scale(layer, scales_list, input_feat_dict=input_feat)
         # apply_scale(layers[i], scales_list, input_feat_dict=input_feat)
         # append prefix to make names global
         awq_results["scale"] += append_str_prefix(
