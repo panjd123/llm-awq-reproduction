@@ -10,6 +10,12 @@ def align_up(a, b):
     return ((a + b - 1) // b) * b
 
 
+def unpack_quantized_tensor(qtensor, q_bit=4, pack_num=8):
+    assert qtensor.dtype == torch.int32
+    assert q_bit in [4], "Only 4-bit are supported for now."
+    assert pack_num in [8], "Only 8 pack num is supported for now."
+
+
 class AWQLinear(nn.Module):
     def __init__(self, q_bit, group_size, in_features, out_features, bias, device):
         super().__init__()

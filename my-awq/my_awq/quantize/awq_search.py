@@ -4,63 +4,22 @@ from torch import nn
 import tqdm
 from collections import defaultdict
 import functools
+import logging
 
 from .quantizer import pseudo_quantize_tensor
+from .awq_module_extract import get_layers, get_embed
 from .clipper import auto_clip_layer, apply_clip
 from .awq_quantize import apply_awq_scale
+from .awq_module_extract import get_named_linears
 from ..utils.calib_data import get_calib_dataset
-from ..utils.utils import clear_memory, get_op_name, append_str_prefix, get_op_by_name
-
-"""
-LlamaForCausalLM(
-  (model): LlamaModel(
-    (embed_tokens): Embedding(32000, 4096)
-    (layers): ModuleList(
-      (0-31): 32 x LlamaDecoderLayer(
-        (self_attn): LlamaSdpaAttention(
-          (q_proj): Linear(in_features=4096, out_features=4096, bias=False)
-          (k_proj): Linear(in_features=4096, out_features=4096, bias=False)
-          (v_proj): Linear(in_features=4096, out_features=4096, bias=False)
-          (o_proj): Linear(in_features=4096, out_features=4096, bias=False)
-          (rotary_emb): LlamaRotaryEmbedding()
-        )
-        (mlp): LlamaMLP(
-          (gate_proj): Linear(in_features=4096, out_features=11008, bias=False)
-          (up_proj): Linear(in_features=4096, out_features=11008, bias=False)
-          (down_proj): Linear(in_features=11008, out_features=4096, bias=False)
-          (act_fn): SiLU()
-        )
-        (input_layernorm): LlamaRMSNorm()
-        (post_attention_layernorm): LlamaRMSNorm()
-      )
-    )
-    (norm): LlamaRMSNorm()
-  )
-  (lm_head): Linear(in_features=4096, out_features=32000, bias=False)
+from ..utils.utils import (
+    clear_memory,
+    get_op_name,
+    append_str_prefix,
+    get_device,
 )
-"""
 
-
-def get_device(module):
-    return next(module.parameters()).device
-
-
-def get_layers(model):
-    if isinstance(model, LlamaForCausalLM):
-        return model.model.layers  # (layers): ModuleList
-    else:
-        raise NotImplementedError(f"Unsupported model: {type(model)}")
-
-
-def get_named_linears(module):
-    return {name: m for name, m in module.named_modules() if isinstance(m, nn.Linear)}
-
-
-def get_embed(model):
-    if isinstance(model, LlamaForCausalLM):
-        return model.model.embed_tokens  # (embed_tokens): Embedding(32000, 4096)
-    else:
-        raise NotImplementedError(f"Unsupported model: {type(model)}")
+logger = logging.getLogger("myawq")
 
 
 def get_layer0_input(model, embed, layers, model_input):
@@ -90,54 +49,6 @@ def get_layer0_input(model, embed, layers, model_input):
     return layer0_input, layer_kwargs
 
 
-"""
-[('',
-  LlamaDecoderLayer(
-    (self_attn): LlamaSdpaAttention(
-      (q_proj): Linear(in_features=4096, out_features=4096, bias=False)
-      (k_proj): Linear(in_features=4096, out_features=4096, bias=False)
-      (v_proj): Linear(in_features=4096, out_features=4096, bias=False)
-      (o_proj): Linear(in_features=4096, out_features=4096, bias=False)
-      (rotary_emb): LlamaRotaryEmbedding()
-    )
-    (mlp): LlamaMLP(
-      (gate_proj): Linear(in_features=4096, out_features=11008, bias=False)
-      (up_proj): Linear(in_features=4096, out_features=11008, bias=False)
-      (down_proj): Linear(in_features=11008, out_features=4096, bias=False)
-      (act_fn): SiLU()
-    )
-    (input_layernorm): LlamaRMSNorm()
-    (post_attention_layernorm): LlamaRMSNorm()
-  )),
- ('self_attn',
-  LlamaSdpaAttention(
-    (q_proj): Linear(in_features=4096, out_features=4096, bias=False)
-    (k_proj): Linear(in_features=4096, out_features=4096, bias=False)
-    (v_proj): Linear(in_features=4096, out_features=4096, bias=False)
-    (o_proj): Linear(in_features=4096, out_features=4096, bias=False)
-    (rotary_emb): LlamaRotaryEmbedding()
-  )),
- ('self_attn.q_proj', Linear(in_features=4096, out_features=4096, bias=False)),
- ('self_attn.k_proj', Linear(in_features=4096, out_features=4096, bias=False)),
- ('self_attn.v_proj', Linear(in_features=4096, out_features=4096, bias=False)),
- ('self_attn.o_proj', Linear(in_features=4096, out_features=4096, bias=False)),
- ('self_attn.rotary_emb', LlamaRotaryEmbedding()),
- ('mlp',
-  LlamaMLP(
-    (gate_proj): Linear(in_features=4096, out_features=11008, bias=False)
-    (up_proj): Linear(in_features=4096, out_features=11008, bias=False)
-    (down_proj): Linear(in_features=11008, out_features=4096, bias=False)
-    (act_fn): SiLU()
-  )),
- ('mlp.gate_proj', Linear(in_features=4096, out_features=11008, bias=False)),
- ('mlp.up_proj', Linear(in_features=4096, out_features=11008, bias=False)),
- ('mlp.down_proj', Linear(in_features=11008, out_features=4096, bias=False)),
- ('mlp.act_fn', SiLU()),
- ('input_layernorm', LlamaRMSNorm()),
- ('post_attention_layernorm', LlamaRMSNorm())]
-"""
-
-
 @torch.no_grad()
 def get_act_scale(x):
     """
@@ -162,13 +73,12 @@ def auto_scale_layer(
         """
         # w: co, ci
         # x: n, ci
-        assert torch.is_grad_enabled() == False
         x = x.to(get_device(module2inspect))
         with torch.no_grad():
             org_out = module2inspect(x, **kwargs)
             if isinstance(org_out, tuple):
+                # LlamaSdpaAttention output (attn_output, None, past_key_value)
                 org_out = org_out[0]
-
         x_mean = get_act_scale(x)
 
         best_error = float("inf")
@@ -215,6 +125,26 @@ def auto_scale_layer(
 
     scales_list = []
     if isinstance(module, LlamaDecoderLayer):
+        """
+        (0-31): 32 x LlamaDecoderLayer(
+            (self_attn): LlamaSdpaAttention( # softmax(QK^T)V
+                (q_proj): Linear(in_features=4096, out_features=4096, bias=False)
+                (k_proj): Linear(in_features=4096, out_features=4096, bias=False)
+                (v_proj): Linear(in_features=4096, out_features=4096, bias=False)
+                (o_proj): Linear(in_features=4096, out_features=4096, bias=False)
+                (rotary_emb): LlamaRotaryEmbedding()
+            )
+            (mlp): LlamaMLP( # down_proj = self.down_proj(self.act_fn(self.gate_proj(x)) * self.up_proj(x))
+                (gate_proj): Linear(in_features=4096, out_features=11008, bias=False)
+                (up_proj): Linear(in_features=4096, out_features=11008, bias=False)
+                (down_proj): Linear(in_features=11008, out_features=4096, bias=False)
+                (act_fn): SiLU()
+            )
+            (input_layernorm): LlamaRMSNorm()
+            (post_attention_layernorm): LlamaRMSNorm()
+        )
+        """
+
         # attention input
         scales_list.append(
             _auto_get_scale(
@@ -292,8 +222,6 @@ def run_awq_search(
         "scale": [],
         "clip": [],
     }
-
-    debug = True
 
     # solve layer by layer
     for i in tqdm.tqdm(range(len(layers)), desc="Running AWQ..."):

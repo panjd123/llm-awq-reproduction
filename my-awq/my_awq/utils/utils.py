@@ -7,6 +7,10 @@ def clear_memory():
     torch.cuda.empty_cache()
 
 
+def get_device(module):
+    return next(module.parameters()).device
+
+
 def get_op_by_name(module, op_name):
     # get the op by its name relative to the module
     for name, m in module.named_modules():

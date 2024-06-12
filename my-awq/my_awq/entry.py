@@ -1,3 +1,17 @@
+"""
+Usage:
+mkdir -p /data/my_awq_cache
+
+python -m my_awq.entry --model_path /data/models/llama-2-7b \
+    --w_bit 4 --q_group_size 128 \
+    --run_awq --calib_dataset_path /data/datasets/pile-val-backup --dump_awq /data/my_awq_cache/awq_results.pt
+    
+python -m my_awq.entry --model_path /data/models/llama-2-7b \
+    --w_bit 4 --q_group_size 128 \
+    --load_awq /data/my_awq_cache/awq_results.pt --q_backend fake \
+    --run_eval --wikitext_path /data/datasets/wikitext
+"""
+
 from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig
 import torch
 import argparse
@@ -58,11 +72,17 @@ parser.add_argument(
     "--calib_dataset_path", type=str, default="/data/datasets/pile-val-backup"
 )  # default="mit-han-lab/pile-val-backup"
 parser.add_argument(
-    "--dump_awq", type=str, default=None, help="save the awq search results"
+    "--dump_awq",
+    type=str,
+    default="/data/my_awq_cache/awq_results.pt",
+    help="save the awq search results",
 )
 # load_awq (+ calculate fake_quant) = load_fake
 parser.add_argument(
-    "--load_awq", type=str, default=None, help="load the awq search results"
+    "--load_awq",
+    type=str,
+    default="/data/my_awq_cache/awq_results.pt",
+    help="load the awq search results",
 )
 
 args = parser.parse_args()

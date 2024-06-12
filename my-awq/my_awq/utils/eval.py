@@ -6,8 +6,12 @@ from accelerate import (
     dispatch_model,
 )
 from datasets import load_dataset
+import logging
+
+logger = logging.getLogger("myawq")
 
 
+@torch.no_grad()
 def eval_wikitext_ppl(model, enc, wikitext_path="wikitext"):
     device_map = infer_auto_device_map(
         model,
@@ -24,12 +28,12 @@ def eval_wikitext_ppl(model, enc, wikitext_path="wikitext"):
     nsamples = testenc.numel() // model.seqlen
     model = model.eval()
     nlls = []
-    for i in tqdm.tqdm(range(nsamples), desc="evaluating..."):
+    bar = tqdm.tqdm(range(nsamples), total=nsamples, desc=f"evaluating (ppl: None) ...")
+    for i in bar:
         batch = testenc[:, (i * model.seqlen) : ((i + 1) * model.seqlen)].to(
             model.device
         )
-        with torch.no_grad():
-            lm_logits = model(batch).logits
+        lm_logits = model(batch).logits
         shift_logits = lm_logits[:, :-1, :].contiguous().float()
         shift_labels = testenc[:, (i * model.seqlen) : ((i + 1) * model.seqlen)][:, 1:]
         loss_fct = nn.CrossEntropyLoss()
@@ -38,7 +42,9 @@ def eval_wikitext_ppl(model, enc, wikitext_path="wikitext"):
         )
         neg_log_likelihood = loss.float() * model.seqlen
         nlls.append(neg_log_likelihood)
+        ppl = torch.exp(torch.stack(nlls).sum() / ((i + 1) * model.seqlen))
+        bar.set_description(f"evaluating (ppl: {ppl.item():.3f}) ...")
 
-    ppl = torch.exp(torch.stack(nlls).sum() / (nsamples * model.seqlen))
-    print(ppl.item())
+    # ppl = torch.exp(torch.stack(nlls).sum() / (nsamples * model.seqlen))
+    logger.info(f"ppl: {ppl.item()}")
     return ppl.item()

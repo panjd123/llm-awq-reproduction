@@ -3,9 +3,15 @@ from torch import nn
 from transformers.models.llama.modeling_llama import LlamaRMSNorm
 import tqdm
 
-from ..utils.utils import get_op_by_name, clear_memory, set_op_by_name
-from .awq_search import get_layers, get_named_linears, get_device
+from ..utils.utils import (
+    get_op_by_name,
+    clear_memory,
+    set_op_by_name,
+    get_device,
+)
+from .awq_module_extract import get_layers, get_named_linears
 from .quantizer import pseudo_quantize_tensor
+from ..qmodule.awqlinear import AWQLinear
 
 
 @torch.no_grad()
@@ -36,7 +42,9 @@ def scale_fc_fc(fc1, fc2, scales):
 
 
 def apply_awq_scale(module, scales_list, input_feat_dict=None):
-    for prev_layer_name, layer_names, scales in scales_list:
+    for prev_layer_name, layer_names, scales in tqdm.tqdm(
+        scales_list, desc="apply awq scale"
+    ):
         prev_op = get_op_by_name(module, prev_layer_name)
         layers = [get_op_by_name(module, name) for name in layer_names]
 
@@ -72,19 +80,18 @@ def pseudo_quantize_model_weight(
 ):
 
     layers = get_layers(model)
-    for i in tqdm(range(len(layers)), desc="pseudo weight quantization..."):
+    for i in tqdm.tqdm(range(len(layers)), desc="pseudo weight quantization..."):
         named_linears = get_named_linears(layers[i])
         for n, m in named_linears.items():
             m.cuda()
-            m.weight.data = pseudo_quantize_tensor(m.weight.data, **q_config)
+            # m.weight.data = pseudo_quantize_tensor(m.weight.data, **q_config)
+            pseudo_quantize_tensor(m.weight.data, inplace=True, **q_config)
             m.cpu()
             clear_memory()
 
 
 @torch.no_grad()
 def real_quantize_model_weight(model, q_config, init_only=False):
-    from ..qmodule.awqlinear import AWQLinear
-    from .awq_search import get_layers, get_named_linears
 
     q_bit = q_config["q_bit"]
 

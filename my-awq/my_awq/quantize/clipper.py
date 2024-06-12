@@ -1,8 +1,9 @@
 import torch
+import tqdm
 
-from .awq_search import get_named_linears
 from .quantizer import pseudo_quantize_tensor
 from ..utils.utils import get_op_by_name, clear_memory
+from .awq_module_extract import get_named_linears
 
 
 # weight quantization
@@ -44,6 +45,7 @@ def _auto_clip(w, input_feat, q_config, n_grid=20, max_shrink=0.5, n_sample_toke
             err = (cur_out - org_out).pow(2).mean(dim=1).view(min_errs.shape)
             del cur_w
             del cur_out
+            clear_memory()
             cur_best_idx = err < min_errs
             min_errs[cur_best_idx] = err[cur_best_idx]
             best_max_val[cur_best_idx] = max_val[cur_best_idx]
@@ -55,6 +57,8 @@ def _auto_clip(w, input_feat, q_config, n_grid=20, max_shrink=0.5, n_sample_toke
     del org_out
     clear_memory()
     return best_max_val.squeeze(1)
+    # no need to reshape back to original shape, because we will never use w in our code
+    # clip is the last step of quantization
 
 
 @torch.no_grad()
@@ -78,7 +82,7 @@ def auto_clip_layer(module, input_feat, q_config):
 @torch.no_grad()
 def apply_clip(module, clip_list):
 
-    for name, max_val in clip_list:
+    for name, max_val in tqdm.tqdm(clip_list, desc="applying clip..."):
         layer = get_op_by_name(module, name)
         layer.cuda()
         max_val = max_val.to(layer.weight.device)
