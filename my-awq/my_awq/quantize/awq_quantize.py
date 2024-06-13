@@ -3,6 +3,10 @@ from torch import nn
 from transformers.models.llama.modeling_llama import LlamaRMSNorm
 import tqdm
 
+import logging
+
+logger = logging.getLogger("myawq")
+
 from ..utils.utils import (
     get_op_by_name,
     clear_memory,
@@ -11,7 +15,13 @@ from ..utils.utils import (
 )
 from .awq_module_extract import get_layers, get_named_linears
 from .quantizer import pseudo_quantize_tensor
+
 from ..qmodule.awqlinear import AWQLinear
+
+try:
+    from awq.quantize.qmodule import WQLinear
+except ImportError as e:
+    WQLinear = None
 
 
 @torch.no_grad()
@@ -84,19 +94,30 @@ def pseudo_quantize_model_weight(
         named_linears = get_named_linears(layers[i])
         for n, m in named_linears.items():
             m.cuda()
-            # m.weight.data = pseudo_quantize_tensor(m.weight.data, **q_config)
             pseudo_quantize_tensor(m.weight.data, inplace=True, **q_config)
             m.cpu()
             clear_memory()
 
 
 @torch.no_grad()
-def real_quantize_model_weight(model, q_config, init_only=False):
+def real_quantize_model_weight(model, q_config, init_only=False, kernel="awq"):
+    if kernel == "awq":
+        if WQLinear is not None:
+            QLinear = WQLinear
+            logger.info("Using WQLinear from original AWQ package")
+        else:
+            logger.warning(
+                "Original AWQ package not found, using our custom AWQLinear instead"
+            )
+            QLinear = AWQLinear
+    else:
+        QLinear = AWQLinear
+        logger.info("Using our custom AWQLinear")
 
     q_bit = q_config["q_bit"]
 
     layers = get_layers(model)
-    for i in tqdm(
+    for i in tqdm.tqdm(
         range(len(layers)),
         desc="real weight quantization" + ("(init only)" if init_only else ""),
     ):
@@ -105,7 +126,7 @@ def real_quantize_model_weight(model, q_config, init_only=False):
 
         for name, module in named_linears.items():
             if init_only:
-                q_linear = AWQLinear.from_linear(
+                q_linear = QLinear.from_linear(
                     module, q_bit, q_config["q_group_size"], True
                 )
                 q_linear.to(get_device(layer))
@@ -115,7 +136,7 @@ def real_quantize_model_weight(model, q_config, init_only=False):
                 module.weight.data, scales, zeros = pseudo_quantize_tensor(
                     module.weight.data, get_scale_zp=True, **q_config
                 )
-                q_linear = AWQLinear.from_linear(
+                q_linear = QLinear.from_linear(
                     module, q_bit, q_config["q_group_size"], False, scales, zeros
                 )
                 module.cpu()

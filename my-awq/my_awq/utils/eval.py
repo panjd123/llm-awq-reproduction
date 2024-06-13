@@ -45,6 +45,6 @@ def eval_wikitext_ppl(model, enc, wikitext_path="wikitext"):
         ppl = torch.exp(torch.stack(nlls).sum() / ((i + 1) * model.seqlen))
         bar.set_description(f"evaluating (ppl: {ppl.item():.3f}) ...")
 
-    # ppl = torch.exp(torch.stack(nlls).sum() / (nsamples * model.seqlen))
+    ppl = torch.exp(torch.stack(nlls).sum() / (nsamples * model.seqlen))
     logger.info(f"ppl: {ppl.item()}")
     return ppl.item()

@@ -169,9 +169,9 @@ class AWQLinear(nn.Module):
             z = unpack_quantized_tensor(
                 self.qzeros, self.q_bit, self.pack_num, shape1=self.n_group
             )  # (oc, n_group)
-            s = self.scales[:, :n_group]  # (oc, n_group)
+            s = self.scales[:, : self.n_group]  # (oc, n_group)
             group_size = self.group_size
-            w = ((q.view(-1, group_size) - z.view(-1, 1)) * s.view(-1, 1)).reshape(
+            w = ((q.view(-1, group_size) - z.view(-1, 1)) * s.reshape(-1, 1)).reshape(
                 -1, x.shape[-1]
             )
             out = torch.mm(inputs, w.t())
@@ -179,7 +179,6 @@ class AWQLinear(nn.Module):
             out = my_awq_kernels.mygemv_cuda(
                 inputs, self.qweight, self.scales, self.qzeros, self.group_size
             )
-
         if self.bias is not None:
             out += self.bias
         return out.reshape(out_shape)

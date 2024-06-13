@@ -1,37 +1,3 @@
-"""
-Usage:
-
-mkdir -p /data/my_awq_cache
-mkdir -p /data/my_quant_cache
-
-python -m my_awq.entry --model_path /data/models/llama-2-7b \
-    --w_bit 4 --q_group_size 128 \
-    --run_awq --calib_dataset_path /data/datasets/pile-val-backup --dump_awq /data/my_awq_cache/llama-2-7b-w4-g128.pt
-
-python -m my_awq.entry --model_path /data/models/llama-2-7b \
-    --w_bit 4 --q_group_size 128 \
-    --load_awq /data/my_awq_cache/llama-2-7b-w4-g128.pt --q_backend fake \
-    --run_eval --wikitext_path /data/datasets/wikitext
-
-python -m my_awq.entry --model_path /data/models/llama-2-7b \
-    --w_bit 4 --q_group_size 128 \
-    --load_awq /data/my_awq_cache/llama-2-7b-w4-g128.pt --q_backend real \
-    --dump_quant /data/my_quant_cache/llama-2-7b-w4-g128.pt
-
-python -m my_awq.entry --model_path /data/models/llama-2-7b \
-    --w_bit 4 --q_group_size 128 \
-    --load_quant /data/my_quant_cache/llama-2-7b-w4-g128.pt --q_backend real \
-    --run_eval --wikitext_path /data/datasets/wikitext
-
-==============================================================================================================
-
-If you can access huggingface.co:
-
-- replace "/data/datasets/pile-val-backup" with "mit-han-lab/pile-val-backup" 
-- replace "/data/datasets/wikitext" with "wikitext"
-
-"""
-
 import logging
 
 logger = logging.getLogger("myawq")
@@ -54,7 +20,11 @@ from .quantize.awq_quantize import (
     real_quantize_model_weight,
 )
 from .quantize.clipper import apply_clip
-from accelerate import init_empty_weights, load_checkpoint_in_model
+from accelerate import (
+    init_empty_weights,
+    load_checkpoint_in_model,
+    infer_auto_device_map,
+)
 
 parser = argparse.ArgumentParser()
 
@@ -68,12 +38,18 @@ parser.add_argument(
     "--wikitext_path",
     type=str,
     help="local path of the wikitext dataset, if you can't access huggingface.co",
-    default="/data/datasets/wikitext",
-)  # default = wikitext
+    default="wikitext",
+)
 parser.add_argument(
     "--run_eval", action="store_true", help="run evaluation on the model"
 )
-
+parser.add_argument(
+    "--kernel",
+    type=str,
+    default="awq",
+    help="quantization kernel, awq or custom",
+    choices=["awq", "custom"],
+)
 parser.add_argument("--w_bit", type=int, default=4)
 parser.add_argument("--q_group_size", type=int, default=128)
 parser.add_argument("--q_backend", type=str, default="fake", choices=["fake", "real"])
@@ -82,20 +58,14 @@ parser.add_argument("--dump_quant", type=str, default=None, help="save quantized
 parser.add_argument("--load_quant", type=str, default=None, help="load quantized model")
 parser.add_argument("--run_awq", action="store_true", help="perform awq search process")
 parser.add_argument(
-    "--calib_dataset_path", type=str, default="/data/datasets/pile-val-backup"
-)  # TODO: default="mit-han-lab/pile-val-backup"
+    "--calib_dataset_path", type=str, default="mit-han-lab/pile-val-backup"
+)
 parser.add_argument(
-    "--dump_awq",
-    type=str,
-    default="/data/my_awq_cache/awq_results.pt",
-    help="save the awq search results",
+    "--dump_awq", type=str, default=None, help="save the awq search results"
 )
 # load_awq (+ calculate fake_quant) = load_fake
 parser.add_argument(
-    "--load_awq",
-    type=str,
-    default="/data/my_awq_cache/awq_results.pt",
-    help="load the awq search results",
+    "--load_awq", type=str, default=None, help="load the awq search results"
 )
 
 args = parser.parse_args()
@@ -118,9 +88,12 @@ def main():
             model = AutoModelForCausalLM.from_config(
                 config=config, torch_dtype=torch.float16, trust_remote_code=True
             )
-        real_quantize_model_weight(model, q_config=q_config, init_only=True)
+
+        real_quantize_model_weight(
+            model, q_config=q_config, init_only=True, kernel=args.kernel
+        )
         model.tie_weights()
-        load_checkpoint_in_model(model, args.load_quant, offload_state_dict=True)
+        model.load_state_dict(torch.load(args.load_quant), assign=True)
         model.eval()
     else:
         model = AutoModelForCausalLM.from_pretrained(
@@ -136,7 +109,7 @@ def main():
                 model,
                 enc,
                 q_config=q_config,
-                n_samples=32,  # TODO: 128
+                n_samples=128,
                 seqlen=512,
                 # offline
                 calib_dataset_path=args.calib_dataset_path,
@@ -154,11 +127,11 @@ def main():
                 if args.q_backend == "fake":
                     pseudo_quantize_model_weight(model, q_config)
                 else:
-                    real_quantize_model_weight(model, q_config)
+                    real_quantize_model_weight(model, q_config, kernel=args.kernel)
 
                 if args.dump_quant:
                     assert args.q_backend != "fake", "Cannot dump fake quant model"
-                    model.save_pretrained(args.dump_quant)
+                    torch.save(model.cpu().state_dict(), args.dump_quant)
                     logger.info(f"Quantized model saved at {args.dump_quant}")
             elif not args.load_quant:  # test original model
                 pass
