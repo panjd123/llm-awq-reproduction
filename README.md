@@ -49,7 +49,7 @@ cd awq/kernels
 python setup.py install
 ```
 
-4. Install our reproduction package (optional, you can directly run our entry.py without installing this package):
+4. Install our reproduction package:
 
 ```bash
 cd ../../../ # go back to the root directory of this repository
@@ -57,12 +57,14 @@ cd my-awq
 pip install -e .
 ```
 
-5. Install our W4A16 CUDA kernel (optional, we use awq's official kernel by default):
+5. Install our W4A16 CUDA kernel (but we use awq's official kernel by default):
 
 ```bash
 cd my_awq/kernels
 python setup.py install
 ```
+
+> to use our custom kernel, `--kernels custom` should be added to the command line.
 
 ## Reproduce the Results on Llama-2-7b
 

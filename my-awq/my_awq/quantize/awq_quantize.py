@@ -17,11 +17,7 @@ from .awq_module_extract import get_layers, get_named_linears
 from .quantizer import pseudo_quantize_tensor
 
 from ..qmodule.awqlinear import AWQLinear
-
-try:
-    from awq.quantize.qmodule import WQLinear
-except ImportError as e:
-    WQLinear = None
+from awq.quantize.qmodule import WQLinear
 
 
 @torch.no_grad()
@@ -102,15 +98,9 @@ def pseudo_quantize_model_weight(
 @torch.no_grad()
 def real_quantize_model_weight(model, q_config, init_only=False, kernel="awq"):
     if kernel == "awq":
-        if WQLinear is not None:
-            QLinear = WQLinear
-            logger.info("Using WQLinear from original AWQ package")
-        else:
-            logger.warning(
-                "Original AWQ package not found, using our custom AWQLinear instead"
-            )
-            QLinear = AWQLinear
-    else:
+        QLinear = WQLinear
+        logger.info("Using WQLinear from original AWQ package")
+    else:  # custom kernel
         QLinear = AWQLinear
         logger.info("Using our custom AWQLinear")
 

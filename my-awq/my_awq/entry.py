@@ -44,7 +44,7 @@ parser.add_argument(
     "--run_eval", action="store_true", help="run evaluation on the model"
 )
 parser.add_argument(
-    "--kernel",
+    "--kernels",
     type=str,
     default="awq",
     help="quantization kernel, awq or custom",
