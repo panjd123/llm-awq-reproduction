@@ -88,9 +88,8 @@ def main():
             model = AutoModelForCausalLM.from_config(
                 config=config, torch_dtype=torch.float16, trust_remote_code=True
             )
-
         real_quantize_model_weight(
-            model, q_config=q_config, init_only=True, kernel=args.kernel
+            model, q_config=q_config, init_only=True, kernel=args.kernels
         )
         model.tie_weights()
         model.load_state_dict(torch.load(args.load_quant), assign=True)

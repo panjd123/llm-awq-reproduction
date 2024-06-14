@@ -10,7 +10,7 @@ from .quantizer import pseudo_quantize_tensor
 from .awq_module_extract import get_layers, get_embed
 from .clipper import auto_clip_layer, apply_clip
 from .awq_quantize import apply_awq_scale
-from .awq_module_extract import get_named_linears
+from .awq_module_extract import get_named_linears, get_awqabled_module
 from ..utils.calib_data import get_calib_dataset
 from ..utils.utils import (
     clear_memory,
@@ -124,72 +124,21 @@ def auto_scale_layer(
         )
 
     scales_list = []
-    if isinstance(module, LlamaDecoderLayer):
-        """
-        (0-31): 32 x LlamaDecoderLayer(
-            (self_attn): LlamaSdpaAttention( # softmax(QK^T)V
-                (q_proj): Linear(in_features=4096, out_features=4096, bias=False)
-                (k_proj): Linear(in_features=4096, out_features=4096, bias=False)
-                (v_proj): Linear(in_features=4096, out_features=4096, bias=False)
-                (o_proj): Linear(in_features=4096, out_features=4096, bias=False)
-                (rotary_emb): LlamaRotaryEmbedding()
-            )
-            (mlp): LlamaMLP( # down_proj = self.down_proj(self.act_fn(self.gate_proj(x)) * self.up_proj(x))
-                (gate_proj): Linear(in_features=4096, out_features=11008, bias=False)
-                (up_proj): Linear(in_features=4096, out_features=11008, bias=False)
-                (down_proj): Linear(in_features=11008, out_features=4096, bias=False)
-                (act_fn): SiLU()
-            )
-            (input_layernorm): LlamaRMSNorm()
-            (post_attention_layernorm): LlamaRMSNorm()
-        )
-        """
-
-        # attention input
+    for (
+        prev_layer,
+        linears2scale,
+        module2inspect,
+        with_layer_kwargs,
+    ) in get_awqabled_module(module):
         scales_list.append(
             _auto_get_scale(
-                prev_layer=module.input_layernorm,
-                linears2scale=[
-                    module.self_attn.q_proj,
-                    module.self_attn.k_proj,
-                    module.self_attn.v_proj,
-                ],
-                inp=input_feat["self_attn.q_proj"],
-                module2inspect=module.self_attn,
-                kwargs=layer_kwargs,
+                prev_layer=prev_layer,
+                linears2scale=linears2scale,
+                inp=input_feat[get_op_name(module, linears2scale[0])],
+                module2inspect=module2inspect,
+                kwargs=layer_kwargs if with_layer_kwargs else {},
             )
         )
-        # attn out
-        if module.self_attn.v_proj.weight.shape == module.self_attn.o_proj.weight.shape:
-            scales_list.append(
-                _auto_get_scale(
-                    prev_layer=module.self_attn.v_proj,
-                    linears2scale=[module.self_attn.o_proj],
-                    inp=input_feat["self_attn.o_proj"],
-                    module2inspect=module.self_attn.o_proj,
-                )
-            )
-        # fc1
-        scales_list.append(
-            _auto_get_scale(
-                prev_layer=module.post_attention_layernorm,
-                linears2scale=[module.mlp.gate_proj, module.mlp.up_proj],
-                inp=input_feat["mlp.gate_proj"],
-                module2inspect=module.mlp,
-            )
-        )
-        # fc2
-        scales_list.append(
-            _auto_get_scale(
-                prev_layer=module.mlp.up_proj,
-                linears2scale=[module.mlp.down_proj],
-                inp=input_feat["mlp.down_proj"],
-                module2inspect=module.mlp.down_proj,
-            )
-        )
-    else:
-        raise NotImplementedError(f"Unsupported layer: {type(module)}")
-
     return scales_list
 
 

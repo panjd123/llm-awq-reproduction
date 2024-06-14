@@ -1,4 +1,4 @@
-from transformers.models.llama.modeling_llama import LlamaForCausalLM
+from transformers.models.llama.modeling_llama import LlamaForCausalLM, LlamaDecoderLayer
 from torch import nn
 
 
@@ -48,3 +48,50 @@ def get_embed(model):
         return model.model.embed_tokens  # (embed_tokens): Embedding(32000, 4096)
     else:
         raise NotImplementedError(f"Unsupported model: {type(model)}")
+
+
+def get_awqabled_module(module):
+    # pre, linears, inspect, with_layer_kwargs
+    results = []
+    if isinstance(module, LlamaDecoderLayer):
+        results.append(
+            [
+                module.input_layernorm,
+                [
+                    module.self_attn.q_proj,
+                    module.self_attn.k_proj,
+                    module.self_attn.v_proj,
+                ],
+                module.self_attn,
+                True,
+            ]
+        )
+        if module.self_attn.v_proj.weight.shape == module.self_attn.o_proj.weight.shape:
+            results.append(
+                [
+                    module.self_attn.v_proj,
+                    [module.self_attn.o_proj],
+                    module.self_attn.o_proj,
+                    False,
+                ]
+            )
+
+        results.append(
+            [
+                module.post_attention_layernorm,
+                [module.mlp.gate_proj, module.mlp.up_proj],
+                module.mlp,
+                False,
+            ]
+        )
+        results.append(
+            [
+                module.mlp.up_proj,
+                [module.mlp.down_proj],
+                module.mlp.down_proj,
+                False,
+            ]
+        )
+        return results
+    else:
+        raise NotImplementedError(f"Unsupported layer: {type(module)}")
