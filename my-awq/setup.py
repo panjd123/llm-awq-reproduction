@@ -11,5 +11,12 @@ setup(
     author_email="xm.jarden@gmail.com",
     license="MIT",
     url="https://github.com/panjd123/llm-awq-reproduction",
-    install_requires=[],  # TODO
+    install_requires=[
+        "torch",
+        "transformers",
+        "accelerate",
+        "tokenizers",
+        "tqdm",
+        "datasets",
+    ],
 )
