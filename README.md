@@ -49,7 +49,7 @@ cd awq/kernels
 python setup.py install
 ```
 
-4. Install our reproduction package:
+4. Install our reproduction package (optional, you can directly run our entry.py without installing this package):
 
 ```bash
 cd ../../../ # go back to the root directory of this repository
@@ -66,7 +66,11 @@ python setup.py install
 
 ## Reproduce the Results on Llama-2-7b
 
+If `my_awq` is not installed, make should you are in the `my-awq` directory (`llm-awq-reproduction/my-awq`) to run the following commands.
+
 ### If you can access huggingface.co:
+
+**bash ../scripts/online.sh**
 
 ```bash
 mkdir -p /data/my_awq_cache
@@ -103,6 +107,8 @@ Download the models and datasets to the following paths:
 - https://huggingface.co/datasets/mit-han-lab/pile-val-backup to `/data/datasets/pile-val-backup`
 - https://huggingface.co/datasets/Salesforce/wikitext to `/data/datasets/wikitext`
 
+**bash ../scripts/offline.sh**
+
 ```bash
 mkdir -p /data/my_awq_cache
 mkdir -p /data/my_quant_cache
@@ -129,3 +135,7 @@ python -m my_awq.entry --model_path /data/models/llama-2-7b \
 python -m my_awq.entry --model_path /data/models/llama-2-7b \
     --run_eval --wikitext_path /data/datasets/wikitext
 ```
+
+### Output
+
+![output](figures/output.png)
